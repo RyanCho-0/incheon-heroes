@@ -17,6 +17,7 @@ use reqwest::Url;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 
 async fn migration(pool: &sqlx::Pool<sqlx::Postgres>) -> Result<()> {
@@ -108,14 +109,14 @@ async fn main() -> Result<()> {
     }
 
     let (tx, mut rx) = broadcast::channel::<Log>(100);
-    tokio::spawn(async move {
+    let listener_handle = tokio::spawn(async move {
         tracing::debug!("Starting realtime event listener");
         if let Err(e) = realtime_event_listener(tx).await {
             tracing::error!("Error in realtime_event_listener: {:?}", e);
         }
     });
 
-    tokio::spawn(async move {
+    let receiver_handle = tokio::spawn(async move {
         tracing::debug!("Starting event Receiver");
         while let Ok(log) = rx.recv().await {
             tracing::debug!("Received MAIN log: {:?}", log);
@@ -137,12 +138,30 @@ async fn main() -> Result<()> {
             };
         }
     });
+    let axum_handle = tokio::spawn(async move {
+        let app = by_axum::new();
 
-    // Wait for a termination signal
-    tokio::signal::ctrl_c()
-        .await
-        .map_err(|e| Error::Unknown(e.to_string()))?;
-    tracing::info!("Shutting down gracefully");
+        let port = option_env!("PORT").unwrap_or("3000");
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+            .await
+            .unwrap();
+        tracing::info!("listening on {}", listener.local_addr().unwrap());
+        by_axum::serve(listener, app).await.unwrap();
+    });
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Shutting down gracefully");
+        }
+        _ = listener_handle => {
+            tracing::info!("Listener task completed");
+        }
+        _ = receiver_handle => {
+            tracing::info!("Receiver task completed");
+        }
+        _ = axum_handle => {
+            tracing::info!("Axum task completed");
+        }
+    }
 
     Ok(())
 }
