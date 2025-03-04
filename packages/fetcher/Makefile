@@ -15,7 +15,7 @@ KLAYTN_OWNER_KEY ?= $(DEV_KEY)
 KLAYTN_OWNER_ADDR ?= $(DEV_ADDR)
 KLAYTN_ENDPOINT ?= https://public-en-kairos.node.kaia.io
 CONTRACT_INCHEON_CONTENTS ?= 0x54a01cd46b7f585584Fe4a3F7dafC25EE1fac0c9
-REPO_NAME ?= $(shell aws ecr describe-repositories --repository-names $(PROJECT)/$(SERVICE) --query "repositories[0].repositoryUri" --output text)
+REPO_URL ?= $(shell aws ecr describe-repositories --repository-names $(PROJECT)/$(SERVICE) --query "repositories[0].repositoryUri" --output text)
 
 RUST_LOG ?= debug
 
@@ -30,10 +30,10 @@ bin.build:
 	$(BUILD_ENV) cargo build --release -p fetcher
 
 docker.build:
-	docker build -t $(REPO_NAME):$(COMMIT) -f Dockerfile $(PWD)/target/release
+	docker build -t $(REPO_URL):$(COMMIT) -f Dockerfile $(PWD)/target/release
 
 docker.push:
-	docker push $(REPO_NAME):$(COMMIT)
+	docker push $(REPO_URL):$(COMMIT)
 
 docker.login:
 	aws ecr get-login-password --region $(REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(REGION).amazonaws.com
